@@ -2,7 +2,6 @@ package types
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -64,7 +63,6 @@ type MessageContent struct {
 }
 
 // MonicaRequest 为 Monica 自定义 AI 的请求格式
-// 注意：以下字段仅示例。真正要与 Monica 对接时，请根据其 API 要求调整字段。
 type MonicaRequest struct {
 	TaskUID  string    `json:"task_uid"`
 	BotUID   string    `json:"bot_uid"`
@@ -325,11 +323,11 @@ func ChatGPTToMonica(chatReq openai.ChatCompletionRequest) (*MonicaRequest, erro
 		TaskType: "chat",
 	}
 
-	indent, err := json.MarshalIndent(mReq, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	log.Printf("send: \n%s\n", indent)
+	// indent, err := json.MarshalIndent(mReq, "", "  ")
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// log.Printf("send: \n%s\n", indent)
 
 	return mReq, nil
 }

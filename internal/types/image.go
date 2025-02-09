@@ -3,7 +3,6 @@ package types
 import (
 	"context"
 	"fmt"
-	"log"
 	"monica-proxy/internal/config"
 	"monica-proxy/internal/utils"
 	"net/http"
@@ -74,7 +73,7 @@ func UploadBase64Image(ctx context.Context, base64Data string) (*FileInfo, error
 	if err != nil {
 		return nil, fmt.Errorf("validate image failed: %v", err)
 	}
-	log.Printf("file info: %+v", fileInfo)
+	// log.Printf("file info: %+v", fileInfo)
 
 	// 5. 获取预签名URL
 	preSignReq := &PreSignRequest{
@@ -99,7 +98,7 @@ func UploadBase64Image(ctx context.Context, base64Data string) (*FileInfo, error
 	if len(preSignResp.Data.PreSignURLList) == 0 || len(preSignResp.Data.ObjectURLList) == 0 {
 		return nil, fmt.Errorf("no pre-sign url or object url returned")
 	}
-	log.Printf("preSign info: %+v", preSignResp)
+	// log.Printf("preSign info: %+v", preSignResp)
 
 	// 6. 上传图片数据
 	_, err = utils.RestyDefaultClient.R().
@@ -129,7 +128,7 @@ func UploadBase64Image(ctx context.Context, base64Data string) (*FileInfo, error
 	if err != nil {
 		return nil, fmt.Errorf("create file object failed: %v", err)
 	}
-	log.Printf("uploadResp: %+v", uploadResp)
+	// log.Printf("uploadResp: %+v", uploadResp)
 	if len(uploadResp.Data.Items) > 0 {
 		fileInfo.FileName = uploadResp.Data.Items[0].FileName
 		fileInfo.FileType = uploadResp.Data.Items[0].FileType
