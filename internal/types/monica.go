@@ -211,9 +211,10 @@ func GetSupportedModels() OpenAIModelList {
 		{ID: "gpt-4o", Object: "model", OwnedBy: "monica"},
 		{ID: "claude-3-5-sonnet", Object: "model", OwnedBy: "monica"},
 		{ID: "claude-3-5-haiku", Object: "model", OwnedBy: "monica"},
-		{ID: "gemini-2.0", Object: "model", OwnedBy: "monica"},
-		{ID: "gemini-1.5", Object: "model", OwnedBy: "monica"},
-		{ID: "o1-mini", Object: "model", OwnedBy: "monica"},
+		{ID: "gemini-2.0-pro", Object: "model", OwnedBy: "monica"},
+		{ID: "gemini-2.0-flash", Object: "model", OwnedBy: "monica"},
+		{ID: "gemini-1.5-pro", Object: "model", OwnedBy: "monica"},
+		{ID: "o3-mini", Object: "model", OwnedBy: "monica"},
 		{ID: "o1-preview", Object: "model", OwnedBy: "monica"},
 		{ID: "deepseek-reasoner", Object: "model", OwnedBy: "monica"},
 		{ID: "deepseek-chat", Object: "model", OwnedBy: "monica"},
@@ -341,16 +342,18 @@ func modelToBot(model string) string {
 		return "gpt_4_o_chat"
 	case strings.HasPrefix(model, "claude-3-5-sonnet"):
 		return "claude_3.5_sonnet"
-	case strings.Contains(model, "haiku"):
+	case strings.HasPrefix(model, "claude-3-5-haiku"):
 		return "claude_3.5_haiku"
-	case strings.HasPrefix(model, "gemini-2"):
+	case strings.HasPrefix(model, "gemini-2.0-pro"):
+		return "gemini_2_0_pro"
+	case strings.HasPrefix(model, "gemini-2.0-flash"):
 		return "gemini_2_0"
 	case strings.HasPrefix(model, "gemini-1"):
 		return "gemini_1_5"
-	case strings.HasPrefix(model, "o1-mini"):
-		return "openai_o_1_mini"
 	case strings.HasPrefix(model, "o1-preview"):
 		return "openai_o_1"
+	case strings.HasPrefix(model, "o3-mini"):
+		return "openai_o_3_mini"
 	case model == "deepseek-reasoner":
 		return "deepseek_reasoner"
 	case model == "deepseek-chat":
