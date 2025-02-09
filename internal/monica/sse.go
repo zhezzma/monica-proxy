@@ -26,8 +26,19 @@ const (
 
 // SSEData 用于解析 Monica SSE json
 type SSEData struct {
+	Text        string      `json:"text"`
+	Finished    bool        `json:"finished"`
+	AgentStatus AgentStatus `json:"agent_status,omitempty"`
+}
+
+type AgentStatus struct {
+	UID      string `json:"uid"`
+	Type     string `json:"type"`
 	Text     string `json:"text"`
-	Finished bool   `json:"finished"`
+	Metadata struct {
+		Title           string `json:"title"`
+		ReasoningDetail string `json:"reasoning_detail"`
+	} `json:"metadata"`
 }
 
 var sseDataPool = sync.Pool{
@@ -69,6 +80,7 @@ func StreamMonicaSSEToClient(model string, w io.Writer, r io.Reader) error {
 		}
 	}()
 
+	var thinkFlag bool
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -99,7 +111,8 @@ func StreamMonicaSSEToClient(model string, w io.Writer, r io.Reader) error {
 
 		// 将拆分后的文字写回
 		var sseMsg types.ChatCompletionStreamResponse
-		if sseObj.Finished {
+		switch {
+		case sseObj.Finished:
 			sseMsg = types.ChatCompletionStreamResponse{
 				ID:      "chatcmpl-" + chatId,
 				Object:  sseObject,
@@ -115,7 +128,48 @@ func StreamMonicaSSEToClient(model string, w io.Writer, r io.Reader) error {
 					},
 				},
 			}
-		} else {
+		case sseObj.AgentStatus.Type == "thinking":
+			thinkFlag = true
+			sseMsg = types.ChatCompletionStreamResponse{
+				ID:                "chatcmpl-" + chatId,
+				Object:            sseObject,
+				SystemFingerprint: fingerprint,
+				Created:           now,
+				Model:             model,
+				Choices: []types.ChatCompletionStreamChoice{
+					{
+						Index: 0,
+						Delta: openai.ChatCompletionStreamChoiceDelta{
+							Role:    openai.ChatMessageRoleAssistant,
+							Content: `<think>`,
+						},
+						FinishReason: openai.FinishReasonNull,
+					},
+				},
+			}
+		case sseObj.AgentStatus.Type == "thinking_detail_stream":
+			sseMsg = types.ChatCompletionStreamResponse{
+				ID:                "chatcmpl-" + chatId,
+				Object:            sseObject,
+				SystemFingerprint: fingerprint,
+				Created:           now,
+				Model:             model,
+				Choices: []types.ChatCompletionStreamChoice{
+					{
+						Index: 0,
+						Delta: openai.ChatCompletionStreamChoiceDelta{
+							Role:    openai.ChatMessageRoleAssistant,
+							Content: sseObj.AgentStatus.Metadata.ReasoningDetail,
+						},
+						FinishReason: openai.FinishReasonNull,
+					},
+				},
+			}
+		default:
+			if thinkFlag {
+				sseObj.Text = "</think>" + sseObj.Text
+				thinkFlag = false
+			}
 			sseMsg = types.ChatCompletionStreamResponse{
 				ID:                "chatcmpl-" + chatId,
 				Object:            sseObject,
@@ -143,7 +197,6 @@ func StreamMonicaSSEToClient(model string, w io.Writer, r io.Reader) error {
 
 		// 写入缓冲区
 		if _, err := writer.WriteString(sb.String()); err != nil {
-			sseDataPool.Put(sseObj)
 			return fmt.Errorf("write error: %w", err)
 		}
 
@@ -154,11 +207,11 @@ func StreamMonicaSSEToClient(model string, w io.Writer, r io.Reader) error {
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
-			sseDataPool.Put(sseObj)
 			return nil
 		}
 
-		// 将对象放回对象池
+		sseObj.AgentStatus.Type = ""
+		sseObj.Finished = false
 		sseDataPool.Put(sseObj)
 	}
 }
