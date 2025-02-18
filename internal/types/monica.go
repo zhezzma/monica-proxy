@@ -12,16 +12,6 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-//const (
-//	MonicaModelGPT4o        = "gpt-4o"
-//	MonicaModelGPT4oMini    = "gpt-4o-mini"
-//	MonicaModelClaudeSonnet = "claude-3"
-//	MonicaModelClaudeHaiku  = "claude-3.5-haiku"
-//	MonicaModelGemini2      = "gemini_2_0"
-//	MonicaModelO1Preview    = "openai_o_1"
-//	MonicaModelO1Mini       = "openai-o-1-mini"
-//)
-
 const (
 	BotChatURL    = "https://api.monica.im/api/custom_bot/chat"
 	PreSignURL    = "https://api.monica.im/api/file_object/pre_sign_list_by_module"

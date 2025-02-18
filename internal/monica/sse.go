@@ -2,9 +2,9 @@ package monica
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
-	"log"
 	"sync"
 	"time"
 
@@ -22,6 +22,10 @@ const (
 	sseFinish     = "[DONE]"
 	flushInterval = 100 * time.Millisecond // 刷新间隔
 	bufferSize    = 4096                   // 缓冲区大小
+
+	dataPrefix    = "data: "
+	dataPrefixLen = len(dataPrefix)
+	lineEnd       = "\n\n"
 )
 
 // SSEData 用于解析 Monica SSE json
@@ -47,9 +51,123 @@ var sseDataPool = sync.Pool{
 	},
 }
 
+// processMonicaSSE 处理Monica的SSE数据
+type processMonicaSSE struct {
+	reader *bufio.Reader
+	model  string
+	buf    []byte
+}
+
+// handleSSEData 处理单条SSE数据
+type handleSSEData func(*SSEData) error
+
+// processSSEStream 处理SSE流
+func (p *processMonicaSSE) processSSEStream(handler handleSSEData) error {
+	if p.buf == nil {
+		p.buf = make([]byte, 4096)
+	}
+
+	var line []byte
+	var err error
+	for {
+		line, err = p.reader.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return fmt.Errorf("read error: %w", err)
+		}
+
+		// Monica SSE 的行前缀一般是 "data: "
+		if len(line) < dataPrefixLen || !bytes.HasPrefix(line, []byte(dataPrefix)) {
+			continue
+		}
+
+		jsonStr := line[dataPrefixLen : len(line)-1] // 去掉\n
+		if len(jsonStr) == 0 {
+			continue
+		}
+
+		// 如果是 [DONE] 则结束
+		if bytes.Equal(jsonStr, []byte(sseFinish)) {
+			return nil
+		}
+
+		// 从对象池获取一个对象
+		sseData := sseDataPool.Get().(*SSEData)
+
+		// 解析 JSON
+		if err := sonic.Unmarshal(jsonStr, sseData); err != nil {
+			sseData = &SSEData{}
+			sseDataPool.Put(sseData)
+			return fmt.Errorf("unmarshal error: %w", err)
+		}
+
+		// 调用处理函数
+		if err := handler(sseData); err != nil {
+			sseData = &SSEData{}
+			sseDataPool.Put(sseData)
+			return err
+		}
+
+		// 使用完后清理并放回对象池
+		sseData = &SSEData{}
+		sseDataPool.Put(sseData)
+	}
+}
+
+// CollectMonicaSSEToCompletion 将 Monica SSE 转换为完整的 ChatCompletion 响应
+func CollectMonicaSSEToCompletion(model string, r io.Reader) (*openai.ChatCompletionResponse, error) {
+	var fullContent strings.Builder
+	processor := &processMonicaSSE{
+		reader: bufio.NewReaderSize(r, bufferSize),
+		model:  model,
+	}
+
+	// 处理SSE数据
+	err := processor.processSSEStream(func(sseData *SSEData) error {
+		// 如果是 agent_status，跳过
+		if sseData.AgentStatus.Type != "" {
+			return nil
+		}
+		// 累积内容
+		fullContent.WriteString(sseData.Text)
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// 构造完整的响应
+	response := &openai.ChatCompletionResponse{
+		ID:      fmt.Sprintf("chatcmpl-%s", utils.RandStringUsingMathRand(29)),
+		Object:  "chat.completion",
+		Created: time.Now().Unix(),
+		Model:   model,
+		Choices: []openai.ChatCompletionChoice{
+			{
+				Index: 0,
+				Message: openai.ChatCompletionMessage{
+					Role:    "assistant",
+					Content: fullContent.String(),
+				},
+				FinishReason: "stop",
+			},
+		},
+		Usage: openai.Usage{
+			// Monica API 不提供 token 使用信息，这里暂时填 0
+			PromptTokens:     0,
+			CompletionTokens: 0,
+			TotalTokens:      0,
+		},
+	}
+
+	return response, nil
+}
+
 // StreamMonicaSSEToClient 将 Monica SSE 转成前端可用的流
 func StreamMonicaSSEToClient(model string, w io.Writer, r io.Reader) error {
-	reader := bufio.NewReaderSize(r, bufferSize)
 	writer := bufio.NewWriterSize(w, bufferSize)
 	defer writer.Flush()
 
@@ -80,39 +198,16 @@ func StreamMonicaSSEToClient(model string, w io.Writer, r io.Reader) error {
 		}
 	}()
 
+	processor := &processMonicaSSE{
+		reader: bufio.NewReaderSize(r, bufferSize),
+		model:  model,
+	}
+
 	var thinkFlag bool
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				return nil
-			}
-			return fmt.Errorf("read error: %w", err)
-		}
-
-		// Monica SSE 的行前缀一般是 "data: "
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		jsonStr := strings.TrimPrefix(line, "data: ")
-		if jsonStr == "" {
-			continue
-		}
-
-		// 从对象池获取 SSEData
-		sseObj := sseDataPool.Get().(*SSEData)
-		if err := sonic.UnmarshalString(jsonStr, sseObj); err != nil {
-			sseDataPool.Put(sseObj)
-			// 记录错误但继续处理
-			log.Printf("Error unmarshaling SSE data: %v", err)
-			continue
-		}
-
-		// 将拆分后的文字写回
+	return processor.processSSEStream(func(sseData *SSEData) error {
 		var sseMsg types.ChatCompletionStreamResponse
 		switch {
-		case sseObj.Finished:
+		case sseData.Finished:
 			sseMsg = types.ChatCompletionStreamResponse{
 				ID:      "chatcmpl-" + chatId,
 				Object:  sseObject,
@@ -128,7 +223,7 @@ func StreamMonicaSSEToClient(model string, w io.Writer, r io.Reader) error {
 					},
 				},
 			}
-		case sseObj.AgentStatus.Type == "thinking":
+		case sseData.AgentStatus.Type == "thinking":
 			thinkFlag = true
 			sseMsg = types.ChatCompletionStreamResponse{
 				ID:                "chatcmpl-" + chatId,
@@ -147,7 +242,7 @@ func StreamMonicaSSEToClient(model string, w io.Writer, r io.Reader) error {
 					},
 				},
 			}
-		case sseObj.AgentStatus.Type == "thinking_detail_stream":
+		case sseData.AgentStatus.Type == "thinking_detail_stream":
 			sseMsg = types.ChatCompletionStreamResponse{
 				ID:                "chatcmpl-" + chatId,
 				Object:            sseObject,
@@ -159,7 +254,7 @@ func StreamMonicaSSEToClient(model string, w io.Writer, r io.Reader) error {
 						Index: 0,
 						Delta: openai.ChatCompletionStreamChoiceDelta{
 							Role:    openai.ChatMessageRoleAssistant,
-							Content: sseObj.AgentStatus.Metadata.ReasoningDetail,
+							Content: sseData.AgentStatus.Metadata.ReasoningDetail,
 						},
 						FinishReason: openai.FinishReasonNull,
 					},
@@ -167,7 +262,7 @@ func StreamMonicaSSEToClient(model string, w io.Writer, r io.Reader) error {
 			}
 		default:
 			if thinkFlag {
-				sseObj.Text = "</think>" + sseObj.Text
+				sseData.Text = "</think>" + sseData.Text
 				thinkFlag = false
 			}
 			sseMsg = types.ChatCompletionStreamResponse{
@@ -181,7 +276,7 @@ func StreamMonicaSSEToClient(model string, w io.Writer, r io.Reader) error {
 						Index: 0,
 						Delta: openai.ChatCompletionStreamChoiceDelta{
 							Role:    openai.ChatMessageRoleAssistant,
-							Content: sseObj.Text,
+							Content: sseData.Text,
 						},
 						FinishReason: openai.FinishReasonNull,
 					},
@@ -201,8 +296,10 @@ func StreamMonicaSSEToClient(model string, w io.Writer, r io.Reader) error {
 		}
 
 		// 如果发现 finished=true，就可以结束
-		if sseObj.Finished {
-			writer.WriteString(fmt.Sprintf("data: %s\n\n", sseFinish))
+		if sseData.Finished {
+			writer.WriteString(dataPrefix)
+			writer.WriteString(sseFinish)
+			writer.WriteString(lineEnd)
 			writer.Flush()
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
@@ -210,8 +307,8 @@ func StreamMonicaSSEToClient(model string, w io.Writer, r io.Reader) error {
 			return nil
 		}
 
-		sseObj.AgentStatus.Type = ""
-		sseObj.Finished = false
-		sseDataPool.Put(sseObj)
-	}
+		sseData.AgentStatus.Type = ""
+		sseData.Finished = false
+		return nil
+	})
 }

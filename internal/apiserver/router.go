@@ -60,15 +60,32 @@ func handleChatCompletion(c echo.Context) error {
 	// Resty 不会自动关闭 Body，需要我们自己来处理
 	defer stream.RawBody().Close()
 
-	// 这里直接用流式方式把 SSE 数据返回
-	c.Response().Header().Set(echo.HeaderContentType, "text/event-stream")
-	c.Response().Header().Set("Cache-Control", "no-cache")
-	c.Response().Header().Set("Transfer-Encoding", "chunked")
-	c.Response().WriteHeader(http.StatusOK)
+	// 根据 stream 参数决定是否使用流式响应
+	if req.Stream {
+		// 使用流式响应
+		c.Response().Header().Set(echo.HeaderContentType, "text/event-stream")
+		c.Response().Header().Set("Cache-Control", "no-cache")
+		c.Response().Header().Set("Transfer-Encoding", "chunked")
+		c.Response().WriteHeader(http.StatusOK)
 
-	// 将 Monica 的 SSE 数据逐行读出，再以 SSE 格式返回给调用方
-	if err := monica.StreamMonicaSSEToClient(req.Model, c.Response().Writer, stream.RawBody()); err != nil {
-		return err
+		// 将 Monica 的 SSE 数据逐行读出，再以 SSE 格式返回给调用方
+		if err := monica.StreamMonicaSSEToClient(req.Model, c.Response().Writer, stream.RawBody()); err != nil {
+			return err
+		}
+	} else {
+		// 使用非流式响应
+		c.Response().Header().Set(echo.HeaderContentType, "application/json")
+
+		// 收集所有的 SSE 数据并转换为完整的响应
+		response, err := monica.CollectMonicaSSEToCompletion(req.Model, stream.RawBody())
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{
+				"error": err.Error(),
+			})
+		}
+
+		// 返回完整的响应
+		return c.JSON(http.StatusOK, response)
 	}
 
 	return nil
