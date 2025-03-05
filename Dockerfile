@@ -21,7 +21,7 @@ WORKDIR /data
 COPY --from=builder /app/build/monica /data/monica
 
 # 开放端口
-EXPOSE 8080
+EXPOSE 7860
 
 # 运行
 CMD ["./monica"]
