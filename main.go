@@ -25,7 +25,7 @@ func main() {
 	// 注册路由
 	apiserver.RegisterRoutes(e)
 	// 启动服务
-	if err := e.Start("0.0.0.0:8080"); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := e.Start("0.0.0.0:7860"); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("start server error: %v", err)
 	}
 }
