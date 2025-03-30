@@ -198,6 +198,7 @@ func GetSupportedModels() OpenAIModelList {
 		{ID: "gpt-4o-mini", Object: "model", OwnedBy: "monica"},
 		{ID: "gpt-4o", Object: "model", OwnedBy: "monica"},
 		{ID: "claude-3-7-sonnet", Object: "model", OwnedBy: "monica"},
+		{ID: "claude-3-7-sonnet-thinking", Object: "model", OwnedBy: "monica"},
 		{ID: "claude-3-5-sonnet", Object: "model", OwnedBy: "monica"},
 		{ID: "claude-3-5-haiku", Object: "model", OwnedBy: "monica"},
 		{ID: "gemini-2.0-pro", Object: "model", OwnedBy: "monica"},
@@ -331,6 +332,8 @@ func modelToBot(model string) string {
 		return "gpt_4_o_mini_chat"
 	case strings.HasPrefix(model, "gpt-4o"):
 		return "gpt_4_o_chat"
+	case strings.HasPrefix(model, "claude-3-7-sonnet-thinking"):
+		return "claude_3_7_sonnet_think"
 	case strings.HasPrefix(model, "claude-3-7-sonnet"):
 		return "claude_3_7_sonnet"
 	case strings.HasPrefix(model, "claude-3-5-sonnet"):
